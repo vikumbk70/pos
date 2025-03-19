@@ -1,7 +1,7 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from "sonner";
 import { v4 as uuidv4 } from 'uuid';
+import { productsApi, customersApi, salesApi } from '../services/api';
 
 // Types for our POS system
 export type Product = {
@@ -63,7 +63,13 @@ type PosContextType = {
   calculateTax: () => number;
   calculateTotal: (discount?: number) => number;
   selectCustomer: (customer: Customer | null) => void;
-  completeSale: (paymentMethod: 'cash' | 'card' | 'digital', paymentAmount: number, discount?: number) => Sale;
+  completeSale: (paymentMethod: 'cash' | 'card' | 'digital', paymentAmount: number, discount?: number) => Promise<Sale>;
+  addProduct: (product: Omit<Product, "id">) => Promise<Product>;
+  updateProduct: (product: Product) => Promise<Product>;
+  deleteProduct: (id: number) => Promise<void>;
+  addCustomer: (customer: Omit<Customer, "id">) => Promise<Customer>;
+  updateCustomer: (customer: Customer) => Promise<Customer>;
+  deleteCustomer: (id: number) => Promise<void>;
 };
 
 // Create the context with default values
@@ -86,7 +92,13 @@ const PosContext = createContext<PosContextType>({
   calculateTax: () => 0,
   calculateTotal: () => 0,
   selectCustomer: () => {},
-  completeSale: () => ({} as Sale),
+  completeSale: async () => ({} as Sale),
+  addProduct: async () => ({} as Product),
+  updateProduct: async () => ({} as Product),
+  deleteProduct: async () => {},
+  addCustomer: async () => ({} as Customer),
+  updateCustomer: async () => ({} as Customer),
+  deleteCustomer: async () => {},
 });
 
 // Import mock data (in a real app, these would come from a local database)
@@ -100,16 +112,84 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingOperations, setPendingOperations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Load data from localStorage on component mount
+  // Check online status
   useEffect(() => {
-    const storedProducts = localStorage.getItem('posProducts');
-    const storedCustomers = localStorage.getItem('posCustomers');
-    const storedSales = localStorage.getItem('posSales');
-    
-    if (storedProducts) setProducts(JSON.parse(storedProducts));
-    if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
-    if (storedSales) setSales(JSON.parse(storedSales));
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Process pending operations when coming back online
+  useEffect(() => {
+    if (isOnline && pendingOperations.length > 0) {
+      const processPendingOperations = async () => {
+        for (const operation of pendingOperations) {
+          try {
+            await operation.execute();
+          } catch (error) {
+            console.error("Failed to process pending operation:", error);
+          }
+        }
+        setPendingOperations([]);
+      };
+
+      processPendingOperations();
+    }
+  }, [isOnline, pendingOperations]);
+
+  // Load data from API on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        if (isOnline) {
+          const [productsData, customersData, salesData] = await Promise.all([
+            productsApi.getAll(),
+            customersApi.getAll(),
+            salesApi.getAll()
+          ]);
+          
+          setProducts(productsData);
+          setCustomers(customersData);
+          setSales(salesData);
+        } else {
+          // Offline mode - load from localStorage
+          const storedProducts = localStorage.getItem('posProducts');
+          const storedCustomers = localStorage.getItem('posCustomers');
+          const storedSales = localStorage.getItem('posSales');
+          
+          if (storedProducts) setProducts(JSON.parse(storedProducts));
+          if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
+          if (storedSales) setSales(JSON.parse(storedSales));
+        }
+      } catch (error) {
+        console.error("Error loading data:", error);
+        toast.error("Failed to load data from server. Using local data.");
+        
+        // Fallback to localStorage
+        const storedProducts = localStorage.getItem('posProducts');
+        const storedCustomers = localStorage.getItem('posCustomers');
+        const storedSales = localStorage.getItem('posSales');
+        
+        if (storedProducts) setProducts(JSON.parse(storedProducts));
+        if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
+        if (storedSales) setSales(JSON.parse(storedSales));
+      }
+      
+      setLoading(false);
+    };
+
+    fetchData();
   }, []);
 
   // Save data to localStorage whenever it changes
@@ -125,6 +205,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('posSales', JSON.stringify(sales));
   }, [sales]);
 
+  // Add a product to the cart
   const addToCart = (product: Product, quantity = 1) => {
     if (product.stock < quantity) {
       toast.error(`Not enough stock for ${product.name}`);
@@ -229,11 +310,205 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const completeSale = (
+  // CRUD operations for products
+  const addProduct = async (productData: Omit<Product, "id">): Promise<Product> => {
+    try {
+      if (isOnline) {
+        const newProduct = await productsApi.create(productData);
+        setProducts(prev => [...prev, newProduct]);
+        toast.success(`Product "${newProduct.name}" added successfully`);
+        return newProduct;
+      } else {
+        // Offline mode - generate temporary ID and save to localStorage
+        const newProduct = { ...productData, id: Date.now() };
+        setProducts(prev => [...prev, newProduct]);
+        
+        // Add to pending operations
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              const serverProduct = await productsApi.create(productData);
+              // Update local product with server ID
+              setProducts(prev => prev.map(p => 
+                p.id === newProduct.id ? serverProduct : p
+              ));
+            }
+          }
+        ]);
+        
+        toast.success(`Product "${newProduct.name}" added successfully (offline mode)`);
+        return newProduct;
+      }
+    } catch (error) {
+      console.error("Failed to add product:", error);
+      toast.error("Failed to add product");
+      throw error;
+    }
+  };
+
+  const updateProduct = async (product: Product): Promise<Product> => {
+    try {
+      if (isOnline) {
+        await productsApi.update(product);
+        setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+        toast.success(`Product "${product.name}" updated successfully`);
+        return product;
+      } else {
+        // Offline mode - update in localStorage
+        setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+        
+        // Add to pending operations
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              await productsApi.update(product);
+            }
+          }
+        ]);
+        
+        toast.success(`Product "${product.name}" updated successfully (offline mode)`);
+        return product;
+      }
+    } catch (error) {
+      console.error("Failed to update product:", error);
+      toast.error("Failed to update product");
+      throw error;
+    }
+  };
+
+  const deleteProduct = async (id: number): Promise<void> => {
+    try {
+      if (isOnline) {
+        await productsApi.delete(id);
+        setProducts(prev => prev.filter(p => p.id !== id));
+        toast.success("Product deleted successfully");
+      } else {
+        // Offline mode - delete from localStorage
+        setProducts(prev => prev.filter(p => p.id !== id));
+        
+        // Add to pending operations
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              await productsApi.delete(id);
+            }
+          }
+        ]);
+        
+        toast.success("Product deleted successfully (offline mode)");
+      }
+    } catch (error) {
+      console.error("Failed to delete product:", error);
+      toast.error("Failed to delete product");
+      throw error;
+    }
+  };
+
+  // CRUD operations for customers
+  const addCustomer = async (customerData: Omit<Customer, "id">): Promise<Customer> => {
+    try {
+      if (isOnline) {
+        const newCustomer = await customersApi.create(customerData);
+        setCustomers(prev => [...prev, newCustomer]);
+        toast.success(`Customer "${newCustomer.name}" added successfully`);
+        return newCustomer;
+      } else {
+        // Offline mode - generate temporary ID and save to localStorage
+        const newCustomer = { ...customerData, id: Date.now() };
+        setCustomers(prev => [...prev, newCustomer]);
+        
+        // Add to pending operations
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              const serverCustomer = await customersApi.create(customerData);
+              // Update local customer with server ID
+              setCustomers(prev => prev.map(c => 
+                c.id === newCustomer.id ? serverCustomer : c
+              ));
+            }
+          }
+        ]);
+        
+        toast.success(`Customer "${newCustomer.name}" added successfully (offline mode)`);
+        return newCustomer;
+      }
+    } catch (error) {
+      console.error("Failed to add customer:", error);
+      toast.error("Failed to add customer");
+      throw error;
+    }
+  };
+
+  const updateCustomer = async (customer: Customer): Promise<Customer> => {
+    try {
+      if (isOnline) {
+        await customersApi.update(customer);
+        setCustomers(prev => prev.map(c => c.id === customer.id ? customer : c));
+        toast.success(`Customer "${customer.name}" updated successfully`);
+        return customer;
+      } else {
+        // Offline mode - update in localStorage
+        setCustomers(prev => prev.map(c => c.id === customer.id ? customer : c));
+        
+        // Add to pending operations
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              await customersApi.update(customer);
+            }
+          }
+        ]);
+        
+        toast.success(`Customer "${customer.name}" updated successfully (offline mode)`);
+        return customer;
+      }
+    } catch (error) {
+      console.error("Failed to update customer:", error);
+      toast.error("Failed to update customer");
+      throw error;
+    }
+  };
+
+  const deleteCustomer = async (id: number): Promise<void> => {
+    try {
+      if (isOnline) {
+        await customersApi.delete(id);
+        setCustomers(prev => prev.filter(c => c.id !== id));
+        toast.success("Customer deleted successfully");
+      } else {
+        // Offline mode - delete from localStorage
+        setCustomers(prev => prev.filter(c => c.id !== id));
+        
+        // Add to pending operations
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              await customersApi.delete(id);
+            }
+          }
+        ]);
+        
+        toast.success("Customer deleted successfully (offline mode)");
+      }
+    } catch (error) {
+      console.error("Failed to delete customer:", error);
+      toast.error("Failed to delete customer");
+      throw error;
+    }
+  };
+
+  const completeSale = async (
     paymentMethod: 'cash' | 'card' | 'digital', 
     paymentAmount: number,
     discount = 0
-  ): Sale => {
+  ): Promise<Sale> => {
     setIsProcessing(true);
     
     try {
@@ -269,14 +544,43 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         date: new Date(),
       };
 
+      if (isOnline) {
+        // Save to server
+        await salesApi.create(sale);
+      } else {
+        // Add to pending operations when offline
+        setPendingOperations(prev => [
+          ...prev, 
+          { 
+            execute: async () => {
+              await salesApi.create(sale);
+            }
+          }
+        ]);
+      }
+
       // Update product stock
       const updatedProducts = products.map(product => {
         const cartItem = cart.find(item => item.product.id === product.id);
         if (cartItem) {
-          return {
+          const updatedProduct = {
             ...product,
             stock: product.stock - cartItem.quantity
           };
+          
+          // Queue product update for when online
+          if (!isOnline) {
+            setPendingOperations(prev => [
+              ...prev, 
+              { 
+                execute: async () => {
+                  await productsApi.update(updatedProduct);
+                }
+              }
+            ]);
+          }
+          
+          return updatedProduct;
         }
         return product;
       });
@@ -288,6 +592,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       toast.success('Sale completed successfully');
       return sale;
+    } catch (error) {
+      console.error("Error completing sale:", error);
+      throw error;
     } finally {
       setIsProcessing(false);
     }
@@ -315,6 +622,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         calculateTotal,
         selectCustomer,
         completeSale,
+        addProduct,
+        updateProduct,
+        deleteProduct,
+        addCustomer,
+        updateCustomer,
+        deleteCustomer,
       }}
     >
       {children}

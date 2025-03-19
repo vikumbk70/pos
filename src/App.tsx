@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { PosProvider } from "./contexts/PosContext";
+import OnlineStatus from "./components/ui/custom/OnlineStatus";
 
 // Pages
 import Login from "./pages/Login";
@@ -43,6 +44,7 @@ const App = () => (
         <PosProvider>
           <Toaster />
           <Sonner />
+          <OnlineStatus />
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
