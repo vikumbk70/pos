@@ -1,5 +1,6 @@
 
 import { Product, Customer, Sale } from "@/types/pos";
+import { supabase } from "@/integrations/supabase/client";
 
 const API_URL = "http://localhost:3000";
 
@@ -16,9 +17,26 @@ const handleResponse = async (response: Response) => {
 export const productsApi = {
   getAll: async (): Promise<Product[]> => {
     try {
+      // Try to fetch from Supabase first
+      const { data, error } = await supabase
+        .from('products')
+        .select('*');
+      
+      if (error) throw error;
+      
+      // If we have data, return it
+      if (data && data.length > 0) {
+        return data as Product[];
+      }
+      
+      // If Supabase has no data, try the local API
       const response = await fetch(`${API_URL}/products`);
-      const data = await handleResponse(response);
-      return data.products;
+      const responseData = await handleResponse(response);
+      
+      // Store in localStorage as backup
+      localStorage.setItem('posProducts', JSON.stringify(responseData.products));
+      
+      return responseData.products;
     } catch (error) {
       console.error("Failed to fetch products:", error);
       // Fall back to localStorage if API fails
@@ -29,15 +47,16 @@ export const productsApi = {
   
   create: async (product: Omit<Product, "id">): Promise<Product> => {
     try {
-      const response = await fetch(`${API_URL}/products`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(product),
-      });
-      const data = await handleResponse(response);
-      return { ...product, id: data.id };
+      // Insert into Supabase
+      const { data, error } = await supabase
+        .from('products')
+        .insert([product])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return data as Product;
     } catch (error) {
       console.error("Failed to create product:", error);
       throw error;
@@ -46,15 +65,19 @@ export const productsApi = {
   
   update: async (product: Product): Promise<Product> => {
     try {
-      const response = await fetch(`${API_URL}/products/${product.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(product),
-      });
-      await handleResponse(response);
-      return product;
+      const { id, ...updateData } = product;
+      
+      // Update in Supabase
+      const { data, error } = await supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return data as Product;
     } catch (error) {
       console.error("Failed to update product:", error);
       throw error;
@@ -63,10 +86,13 @@ export const productsApi = {
   
   delete: async (id: number): Promise<void> => {
     try {
-      const response = await fetch(`${API_URL}/products/${id}`, {
-        method: 'DELETE',
-      });
-      await handleResponse(response);
+      // Delete from Supabase
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
     } catch (error) {
       console.error("Failed to delete product:", error);
       throw error;
@@ -78,9 +104,26 @@ export const productsApi = {
 export const customersApi = {
   getAll: async (): Promise<Customer[]> => {
     try {
+      // Try to fetch from Supabase first
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*');
+      
+      if (error) throw error;
+      
+      // If we have data, return it
+      if (data && data.length > 0) {
+        return data as Customer[];
+      }
+      
+      // If Supabase has no data, try the local API
       const response = await fetch(`${API_URL}/customers`);
-      const data = await handleResponse(response);
-      return data.customers;
+      const responseData = await handleResponse(response);
+      
+      // Store in localStorage as backup
+      localStorage.setItem('posCustomers', JSON.stringify(responseData.customers));
+      
+      return responseData.customers;
     } catch (error) {
       console.error("Failed to fetch customers:", error);
       // Fall back to localStorage if API fails
@@ -91,15 +134,16 @@ export const customersApi = {
   
   create: async (customer: Omit<Customer, "id">): Promise<Customer> => {
     try {
-      const response = await fetch(`${API_URL}/customers`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(customer),
-      });
-      const data = await handleResponse(response);
-      return { ...customer, id: data.id };
+      // Insert into Supabase
+      const { data, error } = await supabase
+        .from('customers')
+        .insert([customer])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return data as Customer;
     } catch (error) {
       console.error("Failed to create customer:", error);
       throw error;
@@ -108,15 +152,19 @@ export const customersApi = {
   
   update: async (customer: Customer): Promise<Customer> => {
     try {
-      const response = await fetch(`${API_URL}/customers/${customer.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(customer),
-      });
-      await handleResponse(response);
-      return customer;
+      const { id, ...updateData } = customer;
+      
+      // Update in Supabase
+      const { data, error } = await supabase
+        .from('customers')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      return data as Customer;
     } catch (error) {
       console.error("Failed to update customer:", error);
       throw error;
@@ -125,10 +173,13 @@ export const customersApi = {
   
   delete: async (id: number): Promise<void> => {
     try {
-      const response = await fetch(`${API_URL}/customers/${id}`, {
-        method: 'DELETE',
-      });
-      await handleResponse(response);
+      // Delete from Supabase
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
     } catch (error) {
       console.error("Failed to delete customer:", error);
       throw error;
@@ -140,9 +191,32 @@ export const customersApi = {
 export const salesApi = {
   getAll: async (): Promise<Sale[]> => {
     try {
+      // Try to fetch from Supabase first
+      const { data, error } = await supabase
+        .from('sales')
+        .select('*');
+      
+      if (error) throw error;
+      
+      // If we have data, return it
+      if (data && data.length > 0) {
+        // Convert dates from strings to Date objects
+        const sales = data.map(sale => ({
+          ...sale,
+          date: new Date(sale.created_at)
+        }));
+        
+        return sales as Sale[];
+      }
+      
+      // If Supabase has no data, try the local API
       const response = await fetch(`${API_URL}/sales`);
-      const data = await handleResponse(response);
-      return data.sales;
+      const responseData = await handleResponse(response);
+      
+      // Store in localStorage as backup
+      localStorage.setItem('posSales', JSON.stringify(responseData.sales));
+      
+      return responseData.sales;
     } catch (error) {
       console.error("Failed to fetch sales:", error);
       // Fall back to localStorage if API fails
@@ -153,15 +227,50 @@ export const salesApi = {
   
   create: async (sale: Sale): Promise<Sale> => {
     try {
-      const response = await fetch(`${API_URL}/sales`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(sale),
-      });
-      await handleResponse(response);
-      return sale;
+      // We need to handle the sale items separately
+      const { items, ...saleData } = sale;
+      
+      // Insert the sale first
+      const { data: saleResult, error: saleError } = await supabase
+        .from('sales')
+        .insert([{
+          cashier_id: saleData.cashierId,
+          cashier_name: saleData.cashierName,
+          customer_id: saleData.customerId,
+          customer_name: saleData.customerName,
+          subtotal: saleData.subtotal,
+          tax: saleData.tax,
+          discount: saleData.discount,
+          total: saleData.total,
+          payment_method: saleData.paymentMethod,
+          payment_amount: saleData.paymentAmount,
+          change: saleData.change
+        }])
+        .select()
+        .single();
+      
+      if (saleError) throw saleError;
+      
+      // Then insert each sale item
+      for (const item of items) {
+        const { error: itemError } = await supabase
+          .from('sale_items')
+          .insert([{
+            sale_id: saleResult.id,
+            product_id: item.product.id,
+            product_name: item.product.name,
+            price: item.product.price,
+            quantity: item.quantity,
+            subtotal: item.subtotal
+          }]);
+        
+        if (itemError) throw itemError;
+      }
+      
+      return {
+        ...sale,
+        id: saleResult.id
+      };
     } catch (error) {
       console.error("Failed to create sale:", error);
       throw error;
