@@ -1,48 +1,21 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { toast } from "sonner";
+
+import React, { createContext, useContext } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { productsApi, customersApi, salesApi } from '../services/api';
+import { toast } from "sonner";
+import { productsApi, salesApi } from '../services/api';
 
-// Types for our POS system
-export type Product = {
-  id: number;
-  name: string;
-  barcode: string;
-  price: number;
-  stock: number;
-  category: string;
-  image?: string;
-};
+// Import types
+import { Product, CartItem, Customer, Sale } from '@/types/pos';
 
-export type CartItem = {
-  product: Product;
-  quantity: number;
-  subtotal: number;
-};
+// Import hooks
+import { useProducts } from '@/hooks/useProducts';
+import { useCustomers } from '@/hooks/useCustomers';
+import { useSales } from '@/hooks/useSales';
+import { useCart } from '@/hooks/useCart';
+import { useOffline } from '@/hooks/useOffline';
 
-export type Customer = {
-  id: number;
-  name: string;
-  phone: string;
-  email: string;
-};
-
-export type Sale = {
-  id: string;
-  cashierId: number;
-  cashierName: string;
-  customerId?: number;
-  customerName?: string;
-  items: CartItem[];
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  paymentMethod: 'cash' | 'card' | 'digital';
-  paymentAmount: number;
-  change: number;
-  date: Date;
-};
+// Import mock data (in a real app, these would come from a local database)
+import { mockProducts, mockCustomers } from '../utils/mockData';
 
 type PosContextType = {
   products: Product[];
@@ -101,409 +74,61 @@ const PosContext = createContext<PosContextType>({
   deleteCustomer: async () => {},
 });
 
-// Import mock data (in a real app, these would come from a local database)
-import { mockProducts, mockCustomers } from '../utils/mockData';
-
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>(mockProducts);
-  const [customers, setCustomers] = useState<Customer[]>(mockCustomers);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [pendingOperations, setPendingOperations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Use our custom hooks for different functionalities
+  const { isOnline, pendingOperations, setPendingOperations } = useOffline();
+  
+  const { 
+    products, 
+    addProduct, 
+    updateProduct, 
+    deleteProduct 
+  } = useProducts(isOnline, pendingOperations, setPendingOperations);
+  
+  const { 
+    customers, 
+    selectedCustomer, 
+    selectCustomer, 
+    addCustomer, 
+    updateCustomer, 
+    deleteCustomer 
+  } = useCustomers(isOnline, pendingOperations, setPendingOperations);
+  
+  const { 
+    sales, 
+    setSales, 
+    isProcessing, 
+    setIsProcessing 
+  } = useSales(isOnline, pendingOperations, setPendingOperations);
+  
+  const { 
+    cart, 
+    setCart, 
+    isScanning, 
+    addToCart, 
+    removeFromCart, 
+    updateCartItemQuantity, 
+    clearCart: clearCartOnly, 
+    scanBarcode: scanBarcodeBase, 
+    startScanning, 
+    stopScanning, 
+    calculateSubtotal, 
+    calculateTax, 
+    calculateTotal 
+  } = useCart();
 
-  // Check online status
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  // Process pending operations when coming back online
-  useEffect(() => {
-    if (isOnline && pendingOperations.length > 0) {
-      const processPendingOperations = async () => {
-        for (const operation of pendingOperations) {
-          try {
-            await operation.execute();
-          } catch (error) {
-            console.error("Failed to process pending operation:", error);
-          }
-        }
-        setPendingOperations([]);
-      };
-
-      processPendingOperations();
-    }
-  }, [isOnline, pendingOperations]);
-
-  // Load data from API on component mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        if (isOnline) {
-          const [productsData, customersData, salesData] = await Promise.all([
-            productsApi.getAll(),
-            customersApi.getAll(),
-            salesApi.getAll()
-          ]);
-          
-          setProducts(productsData);
-          setCustomers(customersData);
-          setSales(salesData);
-        } else {
-          // Offline mode - load from localStorage
-          const storedProducts = localStorage.getItem('posProducts');
-          const storedCustomers = localStorage.getItem('posCustomers');
-          const storedSales = localStorage.getItem('posSales');
-          
-          if (storedProducts) setProducts(JSON.parse(storedProducts));
-          if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
-          if (storedSales) setSales(JSON.parse(storedSales));
-        }
-      } catch (error) {
-        console.error("Error loading data:", error);
-        toast.error("Failed to load data from server. Using local data.");
-        
-        // Fallback to localStorage
-        const storedProducts = localStorage.getItem('posProducts');
-        const storedCustomers = localStorage.getItem('posCustomers');
-        const storedSales = localStorage.getItem('posSales');
-        
-        if (storedProducts) setProducts(JSON.parse(storedProducts));
-        if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
-        if (storedSales) setSales(JSON.parse(storedSales));
-      }
-      
-      setLoading(false);
-    };
-
-    fetchData();
-  }, []);
-
-  // Save data to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem('posProducts', JSON.stringify(products));
-  }, [products]);
-
-  useEffect(() => {
-    localStorage.setItem('posCustomers', JSON.stringify(customers));
-  }, [customers]);
-
-  useEffect(() => {
-    localStorage.setItem('posSales', JSON.stringify(sales));
-  }, [sales]);
-
-  // Add a product to the cart
-  const addToCart = (product: Product, quantity = 1) => {
-    if (product.stock < quantity) {
-      toast.error(`Not enough stock for ${product.name}`);
-      return;
-    }
-
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.product.id === product.id);
-      
-      if (existingItem) {
-        // Update existing item
-        const newQuantity = existingItem.quantity + quantity;
-        
-        if (product.stock < newQuantity) {
-          toast.error(`Not enough stock for ${product.name}`);
-          return prevCart;
-        }
-        
-        return prevCart.map(item => 
-          item.product.id === product.id
-            ? { ...item, quantity: newQuantity, subtotal: product.price * newQuantity }
-            : item
-        );
-      } else {
-        // Add new item
-        return [...prevCart, { 
-          product, 
-          quantity, 
-          subtotal: product.price * quantity 
-        }];
-      }
-    });
-    
-    toast.success(`Added ${product.name} to cart`);
-  };
-
-  const removeFromCart = (productId: number) => {
-    setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
-  };
-
-  const updateCartItemQuantity = (productId: number, quantity: number) => {
-    if (quantity < 1) {
-      removeFromCart(productId);
-      return;
-    }
-
-    setCart(prevCart => 
-      prevCart.map(item => {
-        if (item.product.id === productId) {
-          if (item.product.stock < quantity) {
-            toast.error(`Not enough stock for ${item.product.name}`);
-            return item;
-          }
-          return {
-            ...item,
-            quantity,
-            subtotal: item.product.price * quantity
-          };
-        }
-        return item;
-      })
-    );
-  };
-
+  // Combined clear cart that also clears selected customer
   const clearCart = () => {
-    setCart([]);
-    setSelectedCustomer(null);
+    clearCartOnly();
+    selectCustomer(null);
   };
 
+  // Barcode scanner that uses our products
   const scanBarcode = (barcode: string): Product | null => {
-    const product = products.find(p => p.barcode === barcode);
-    
-    if (product) {
-      addToCart(product);
-      return product;
-    }
-    
-    toast.error(`Product with barcode ${barcode} not found`);
-    return null;
+    return scanBarcodeBase(barcode, products);
   };
 
-  const startScanning = () => setIsScanning(true);
-  const stopScanning = () => setIsScanning(false);
-
-  const calculateSubtotal = () => {
-    return cart.reduce((sum, item) => sum + item.subtotal, 0);
-  };
-
-  const calculateTax = () => {
-    // Assuming 10% tax rate
-    return calculateSubtotal() * 0.1;
-  };
-
-  const calculateTotal = (discount = 0) => {
-    return calculateSubtotal() + calculateTax() - discount;
-  };
-
-  const selectCustomer = (customer: Customer | null) => {
-    setSelectedCustomer(customer);
-    if (customer) {
-      toast.success(`Customer ${customer.name} selected`);
-    }
-  };
-
-  // CRUD operations for products
-  const addProduct = async (productData: Omit<Product, "id">): Promise<Product> => {
-    try {
-      if (isOnline) {
-        const newProduct = await productsApi.create(productData);
-        setProducts(prev => [...prev, newProduct]);
-        toast.success(`Product "${newProduct.name}" added successfully`);
-        return newProduct;
-      } else {
-        // Offline mode - generate temporary ID and save to localStorage
-        const newProduct = { ...productData, id: Date.now() };
-        setProducts(prev => [...prev, newProduct]);
-        
-        // Add to pending operations
-        setPendingOperations(prev => [
-          ...prev, 
-          { 
-            execute: async () => {
-              const serverProduct = await productsApi.create(productData);
-              // Update local product with server ID
-              setProducts(prev => prev.map(p => 
-                p.id === newProduct.id ? serverProduct : p
-              ));
-            }
-          }
-        ]);
-        
-        toast.success(`Product "${newProduct.name}" added successfully (offline mode)`);
-        return newProduct;
-      }
-    } catch (error) {
-      console.error("Failed to add product:", error);
-      toast.error("Failed to add product");
-      throw error;
-    }
-  };
-
-  const updateProduct = async (product: Product): Promise<Product> => {
-    try {
-      if (isOnline) {
-        await productsApi.update(product);
-        setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-        toast.success(`Product "${product.name}" updated successfully`);
-        return product;
-      } else {
-        // Offline mode - update in localStorage
-        setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-        
-        // Add to pending operations
-        setPendingOperations(prev => [
-          ...prev, 
-          { 
-            execute: async () => {
-              await productsApi.update(product);
-            }
-          }
-        ]);
-        
-        toast.success(`Product "${product.name}" updated successfully (offline mode)`);
-        return product;
-      }
-    } catch (error) {
-      console.error("Failed to update product:", error);
-      toast.error("Failed to update product");
-      throw error;
-    }
-  };
-
-  const deleteProduct = async (id: number): Promise<void> => {
-    try {
-      if (isOnline) {
-        await productsApi.delete(id);
-        setProducts(prev => prev.filter(p => p.id !== id));
-        toast.success("Product deleted successfully");
-      } else {
-        // Offline mode - delete from localStorage
-        setProducts(prev => prev.filter(p => p.id !== id));
-        
-        // Add to pending operations
-        setPendingOperations(prev => [
-          ...prev, 
-          { 
-            execute: async () => {
-              await productsApi.delete(id);
-            }
-          }
-        ]);
-        
-        toast.success("Product deleted successfully (offline mode)");
-      }
-    } catch (error) {
-      console.error("Failed to delete product:", error);
-      toast.error("Failed to delete product");
-      throw error;
-    }
-  };
-
-  // CRUD operations for customers
-  const addCustomer = async (customerData: Omit<Customer, "id">): Promise<Customer> => {
-    try {
-      if (isOnline) {
-        const newCustomer = await customersApi.create(customerData);
-        setCustomers(prev => [...prev, newCustomer]);
-        toast.success(`Customer "${newCustomer.name}" added successfully`);
-        return newCustomer;
-      } else {
-        // Offline mode - generate temporary ID and save to localStorage
-        const newCustomer = { ...customerData, id: Date.now() };
-        setCustomers(prev => [...prev, newCustomer]);
-        
-        // Add to pending operations
-        setPendingOperations(prev => [
-          ...prev, 
-          { 
-            execute: async () => {
-              const serverCustomer = await customersApi.create(customerData);
-              // Update local customer with server ID
-              setCustomers(prev => prev.map(c => 
-                c.id === newCustomer.id ? serverCustomer : c
-              ));
-            }
-          }
-        ]);
-        
-        toast.success(`Customer "${newCustomer.name}" added successfully (offline mode)`);
-        return newCustomer;
-      }
-    } catch (error) {
-      console.error("Failed to add customer:", error);
-      toast.error("Failed to add customer");
-      throw error;
-    }
-  };
-
-  const updateCustomer = async (customer: Customer): Promise<Customer> => {
-    try {
-      if (isOnline) {
-        await customersApi.update(customer);
-        setCustomers(prev => prev.map(c => c.id === customer.id ? customer : c));
-        toast.success(`Customer "${customer.name}" updated successfully`);
-        return customer;
-      } else {
-        // Offline mode - update in localStorage
-        setCustomers(prev => prev.map(c => c.id === customer.id ? customer : c));
-        
-        // Add to pending operations
-        setPendingOperations(prev => [
-          ...prev, 
-          { 
-            execute: async () => {
-              await customersApi.update(customer);
-            }
-          }
-        ]);
-        
-        toast.success(`Customer "${customer.name}" updated successfully (offline mode)`);
-        return customer;
-      }
-    } catch (error) {
-      console.error("Failed to update customer:", error);
-      toast.error("Failed to update customer");
-      throw error;
-    }
-  };
-
-  const deleteCustomer = async (id: number): Promise<void> => {
-    try {
-      if (isOnline) {
-        await customersApi.delete(id);
-        setCustomers(prev => prev.filter(c => c.id !== id));
-        toast.success("Customer deleted successfully");
-      } else {
-        // Offline mode - delete from localStorage
-        setCustomers(prev => prev.filter(c => c.id !== id));
-        
-        // Add to pending operations
-        setPendingOperations(prev => [
-          ...prev, 
-          { 
-            execute: async () => {
-              await customersApi.delete(id);
-            }
-          }
-        ]);
-        
-        toast.success("Customer deleted successfully (offline mode)");
-      }
-    } catch (error) {
-      console.error("Failed to delete customer:", error);
-      toast.error("Failed to delete customer");
-      throw error;
-    }
-  };
-
+  // Complete sale function
   const completeSale = async (
     paymentMethod: 'cash' | 'card' | 'digital', 
     paymentAmount: number,
@@ -549,8 +174,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await salesApi.create(sale);
       } else {
         // Add to pending operations when offline
-        setPendingOperations(prev => [
-          ...prev, 
+        setPendingOperations([
+          ...pendingOperations, 
           { 
             execute: async () => {
               await salesApi.create(sale);
@@ -570,8 +195,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           
           // Queue product update for when online
           if (!isOnline) {
-            setPendingOperations(prev => [
-              ...prev, 
+            setPendingOperations([
+              ...pendingOperations, 
               { 
                 execute: async () => {
                   await productsApi.update(updatedProduct);
@@ -586,8 +211,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       // Update state
-      setSales(prevSales => [...prevSales, sale]);
-      setProducts(updatedProducts);
+      setSales([...sales, sale]);
+      
+      // Update each product
+      for (const product of updatedProducts) {
+        const originalProduct = products.find(p => p.id === product.id);
+        if (originalProduct && originalProduct.stock !== product.stock) {
+          updateProduct(product);
+        }
+      }
+      
       clearCart();
       
       toast.success('Sale completed successfully');
