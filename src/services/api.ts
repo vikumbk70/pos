@@ -1,5 +1,5 @@
 
-import { Product, Customer, Sale } from "@/types/pos";
+import { Product, Customer, Sale, CartItem } from "@/types/pos";
 import { supabase } from "@/integrations/supabase/client";
 
 const API_URL = "http://localhost:3000";
@@ -192,21 +192,61 @@ export const salesApi = {
   getAll: async (): Promise<Sale[]> => {
     try {
       // Try to fetch from Supabase first
-      const { data, error } = await supabase
+      const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select('*');
       
-      if (error) throw error;
+      if (salesError) throw salesError;
       
       // If we have data, return it
-      if (data && data.length > 0) {
-        // Convert dates from strings to Date objects
-        const sales = data.map(sale => ({
-          ...sale,
-          date: new Date(sale.created_at)
-        }));
+      if (salesData && salesData.length > 0) {
+        // Need to fetch sale items for each sale
+        const sales: Sale[] = [];
         
-        return sales as Sale[];
+        for (const sale of salesData) {
+          // Get items for this sale
+          const { data: itemsData, error: itemsError } = await supabase
+            .from('sale_items')
+            .select('*')
+            .eq('sale_id', sale.id);
+            
+          if (itemsError) throw itemsError;
+          
+          // Map database fields to our Sale type
+          const cartItems: CartItem[] = itemsData?.map(item => ({
+            product: {
+              id: item.product_id,
+              name: item.product_name,
+              price: item.price,
+              // These fields aren't in the sale_items table, but are required by the Product type
+              barcode: '',
+              stock: 0,
+              category: ''
+            },
+            quantity: item.quantity,
+            subtotal: item.subtotal
+          })) || [];
+          
+          // Map the database fields to our Sale type
+          sales.push({
+            id: sale.id,
+            cashierId: sale.cashier_id,
+            cashierName: sale.cashier_name,
+            customerId: sale.customer_id || undefined,
+            customerName: sale.customer_name || undefined,
+            items: cartItems,
+            subtotal: sale.subtotal,
+            tax: sale.tax,
+            discount: sale.discount,
+            total: sale.total,
+            paymentMethod: sale.payment_method as 'cash' | 'card' | 'digital',
+            paymentAmount: sale.payment_amount,
+            change: sale.change,
+            date: new Date(sale.created_at)
+          });
+        }
+        
+        return sales;
       }
       
       // If Supabase has no data, try the local API
