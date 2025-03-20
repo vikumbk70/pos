@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { toast } from "sonner";
 import { productsApi, salesApi } from '../services/api';
 
-// Import types
+// Import types from the dedicated types file
 import { Product, CartItem, Customer, Sale } from '@/types/pos';
 
 // Import hooks
@@ -269,3 +269,6 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
 export const usePos = () => useContext(PosContext);
+
+// Export types for backward compatibility
+export type { Product, CartItem, Customer, Sale } from '@/types/pos';

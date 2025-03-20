@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +15,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
-import { usePos, Sale, Product } from '@/contexts/PosContext';
+import { usePos } from '@/contexts/PosContext';
+import { Sale, Product } from '@/types/pos';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';

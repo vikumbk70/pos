@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
-import { usePos, Product } from '@/contexts/PosContext';
+import { usePos } from '@/contexts/PosContext';
+import { Product } from '@/types/pos';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {

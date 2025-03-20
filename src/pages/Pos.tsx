@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from '@/components/layout/Layout';
 import Barcode from '@/components/ui/custom/Barcode';
@@ -27,7 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { usePos, CartItem, Customer } from '@/contexts/PosContext';
+import { usePos } from '@/contexts/PosContext';
+import { CartItem, Customer } from '@/types/pos';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Search,

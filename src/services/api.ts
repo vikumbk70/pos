@@ -1,5 +1,5 @@
 
-import { Product, Customer, Sale } from "@/contexts/PosContext";
+import { Product, Customer, Sale } from "@/types/pos";
 
 const API_URL = "http://localhost:3000";
 
