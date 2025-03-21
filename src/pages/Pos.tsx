@@ -480,7 +480,7 @@ const Pos = () => {
               
               <div className="flex justify-between text-sm mb-4">
                 <div>
-                  <p>Receipt #: <span className="font-mono">{currentSale.id.slice(0, 8)}</span></p>
+                  <p>Receipt #: <span className="font-mono">{currentSale.id ? currentSale.id.slice(0, 8) : 'N/A'}</span></p>
                   <p>Date: {new Date(currentSale.date).toLocaleDateString()}</p>
                   <p>Time: {new Date(currentSale.date).toLocaleTimeString()}</p>
                 </div>
