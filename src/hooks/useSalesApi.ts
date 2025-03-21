@@ -1,72 +1,71 @@
 
 import { useState, useCallback } from 'react';
-import { productsApi, Product } from '../services/api';
+import { salesApi, Sale, SaleItem } from '../services/api';
 import { toast } from 'sonner';
 
-export const useProductApi = () => {
+export const useSalesApi = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   
-  const fetchProducts = useCallback(async () => {
+  const fetchSales = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const products = await productsApi.getAll();
-      return products;
+      const sales = await salesApi.getAll();
+      return sales;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to fetch products');
+      toast.error('Failed to fetch sales');
       return [];
     } finally {
       setIsLoading(false);
     }
   }, []);
   
-  const createProduct = useCallback(async (product: Omit<Product, 'id' | 'created_at' | 'updated_at'>) => {
+  const fetchSale = useCallback(async (id: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const newProduct = await productsApi.create(product);
-      toast.success('Product created successfully');
-      return newProduct;
+      const sale = await salesApi.getById(id);
+      return sale;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to create product');
+      toast.error('Failed to fetch sale details');
       throw error;
     } finally {
       setIsLoading(false);
     }
   }, []);
   
-  const updateProduct = useCallback(async (id: number, product: Partial<Product>) => {
+  const fetchSaleItems = useCallback(async (id: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const updatedProduct = await productsApi.update(id, product);
-      toast.success('Product updated successfully');
-      return updatedProduct;
+      const items = await salesApi.getItems(id);
+      return items;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to update product');
-      throw error;
+      toast.error('Failed to fetch sale items');
+      return [];
     } finally {
       setIsLoading(false);
     }
   }, []);
   
-  const deleteProduct = useCallback(async (id: number) => {
+  const createSale = useCallback(async (sale: Omit<Sale, 'id' | 'created_at'>) => {
     setIsLoading(true);
     setError(null);
     try {
-      await productsApi.delete(id);
-      toast.success('Product deleted successfully');
+      const newSale = await salesApi.create(sale);
+      toast.success('Sale completed successfully');
+      return newSale;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to delete product');
+      toast.error('Failed to complete sale');
       throw error;
     } finally {
       setIsLoading(false);
@@ -76,9 +75,9 @@ export const useProductApi = () => {
   return {
     isLoading,
     error,
-    fetchProducts,
-    createProduct,
-    updateProduct,
-    deleteProduct
+    fetchSales,
+    fetchSale,
+    fetchSaleItems,
+    createSale
   };
 };

@@ -1,72 +1,72 @@
 
 import { useState, useCallback } from 'react';
-import { productsApi, Product } from '../services/api';
+import { customersApi, Customer } from '../services/api';
 import { toast } from 'sonner';
 
-export const useProductApi = () => {
+export const useCustomerApi = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   
-  const fetchProducts = useCallback(async () => {
+  const fetchCustomers = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const products = await productsApi.getAll();
-      return products;
+      const customers = await customersApi.getAll();
+      return customers;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to fetch products');
+      toast.error('Failed to fetch customers');
       return [];
     } finally {
       setIsLoading(false);
     }
   }, []);
   
-  const createProduct = useCallback(async (product: Omit<Product, 'id' | 'created_at' | 'updated_at'>) => {
+  const createCustomer = useCallback(async (customer: Pick<Customer, 'name' | 'phone' | 'email'>) => {
     setIsLoading(true);
     setError(null);
     try {
-      const newProduct = await productsApi.create(product);
-      toast.success('Product created successfully');
-      return newProduct;
+      const newCustomer = await customersApi.create(customer);
+      toast.success('Customer created successfully');
+      return newCustomer;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to create product');
+      toast.error('Failed to create customer');
       throw error;
     } finally {
       setIsLoading(false);
     }
   }, []);
   
-  const updateProduct = useCallback(async (id: number, product: Partial<Product>) => {
+  const updateCustomer = useCallback(async (id: number, customer: Partial<Customer>) => {
     setIsLoading(true);
     setError(null);
     try {
-      const updatedProduct = await productsApi.update(id, product);
-      toast.success('Product updated successfully');
-      return updatedProduct;
+      const updatedCustomer = await customersApi.update(id, customer);
+      toast.success('Customer updated successfully');
+      return updatedCustomer;
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to update product');
+      toast.error('Failed to update customer');
       throw error;
     } finally {
       setIsLoading(false);
     }
   }, []);
   
-  const deleteProduct = useCallback(async (id: number) => {
+  const deleteCustomer = useCallback(async (id: number) => {
     setIsLoading(true);
     setError(null);
     try {
-      await productsApi.delete(id);
-      toast.success('Product deleted successfully');
+      await customersApi.delete(id);
+      toast.success('Customer deleted successfully');
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error occurred');
       setError(error);
-      toast.error('Failed to delete product');
+      toast.error('Failed to delete customer');
       throw error;
     } finally {
       setIsLoading(false);
@@ -76,9 +76,9 @@ export const useProductApi = () => {
   return {
     isLoading,
     error,
-    fetchProducts,
-    createProduct,
-    updateProduct,
-    deleteProduct
+    fetchCustomers,
+    createCustomer,
+    updateCustomer,
+    deleteCustomer
   };
 };

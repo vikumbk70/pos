@@ -1,30 +1,16 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from "sonner";
 import { v4 as uuidv4 } from 'uuid';
+import { Product, Customer, Sale as ApiSale, SaleItem as ApiSaleItem } from '../services/api';
 
 // Types for our POS system
-export type Product = {
-  id: number;
-  name: string;
-  barcode: string;
-  price: number;
-  stock: number;
-  category: string;
-  image?: string;
-};
+export type { Product };
+export type { Customer };
 
 export type CartItem = {
   product: Product;
   quantity: number;
   subtotal: number;
-};
-
-export type Customer = {
-  id: number;
-  name: string;
-  phone: string;
-  email: string;
 };
 
 export type Sale = {
