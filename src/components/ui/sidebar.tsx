@@ -1,3 +1,4 @@
+
 import {
   Sheet,
   SheetContent,
@@ -8,6 +9,7 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,9 +57,9 @@ export function Sidebar() {
       icon: <ShoppingBag className="h-5 w-5" />,
     },
     {
-      title: "Customers",
-      href: "/customers",
-      icon: <Users className="h-5 w-5" />,
+      title: "Products",
+      href: "/products",
+      icon: <ShoppingBag className="h-5 w-5" />,
     },
     {
       title: "Settings",
@@ -115,10 +117,10 @@ export function Sidebar() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="w-full justify-start gap-2">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={user?.image} alt={user?.name} />
-                  <AvatarFallback>{user?.name?.slice(0, 2)}</AvatarFallback>
+                  <AvatarImage src={user?.username ? `https://ui-avatars.com/api/?name=${user.username}` : undefined} alt={user?.username || ''} />
+                  <AvatarFallback>{user?.username?.slice(0, 2) || '--'}</AvatarFallback>
                 </Avatar>
-                <span>{user?.name}</span>
+                <span>{user?.username || 'User'}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-80" align="end" forceMount>
@@ -171,10 +173,10 @@ export function Sidebar() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="w-full justify-start gap-2">
               <Avatar className="h-8 w-8">
-                <AvatarImage src={user?.image} alt={user?.name} />
-                <AvatarFallback>{user?.name?.slice(0, 2)}</AvatarFallback>
+                <AvatarImage src={user?.username ? `https://ui-avatars.com/api/?name=${user.username}` : undefined} alt={user?.username || ''} />
+                <AvatarFallback>{user?.username?.slice(0, 2) || '--'}</AvatarFallback>
               </Avatar>
-              <span>{user?.name}</span>
+              <span>{user?.username || 'User'}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-80" align="end" forceMount>

@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from "react";
-import { Layout } from "@/components/layout/Layout";
+import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
