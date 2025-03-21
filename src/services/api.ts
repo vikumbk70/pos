@@ -1,3 +1,4 @@
+
 import { Product, Customer, Sale, CartItem } from "@/types/pos";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -96,6 +97,7 @@ export const productsApi = {
       
       // If product is used in sales, update its stock to 0 instead of deleting
       if (saleItems && saleItems.length > 0) {
+        // Update stock to 0 instead of deleting
         const { error: updateError } = await supabase
           .from('products')
           .update({ stock: 0 })
@@ -103,7 +105,8 @@ export const productsApi = {
         
         if (updateError) throw updateError;
         
-        throw new Error("Product is used in sales and cannot be deleted. Stock has been set to 0 instead.");
+        console.log("Product is used in sales. Stock set to 0 instead of deleting.");
+        return;
       }
       
       // If product is not used in sales, delete it
@@ -120,93 +123,6 @@ export const productsApi = {
   }
 };
 
-// Customers API
-export const customersApi = {
-  getAll: async (): Promise<Customer[]> => {
-    try {
-      // Try to fetch from Supabase first
-      const { data, error } = await supabase
-        .from('customers')
-        .select('*');
-      
-      if (error) throw error;
-      
-      // If we have data, return it
-      if (data && data.length > 0) {
-        return data as Customer[];
-      }
-      
-      // If Supabase has no data, try the local API
-      const response = await fetch(`${API_URL}/api/customers`);
-      const customers = await handleResponse(response);
-      
-      // Store in localStorage as backup
-      localStorage.setItem('posCustomers', JSON.stringify(customers));
-      
-      return customers;
-    } catch (error) {
-      console.error("Failed to fetch customers:", error);
-      // Fall back to localStorage if API fails
-      const storedCustomers = localStorage.getItem('posCustomers');
-      return storedCustomers ? JSON.parse(storedCustomers) : [];
-    }
-  },
-  
-  create: async (customer: Omit<Customer, "id">): Promise<Customer> => {
-    try {
-      // Insert into Supabase
-      const { data, error } = await supabase
-        .from('customers')
-        .insert([customer])
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      return data as Customer;
-    } catch (error) {
-      console.error("Failed to create customer:", error);
-      throw error;
-    }
-  },
-  
-  update: async (customer: Customer): Promise<Customer> => {
-    try {
-      const { id, ...updateData } = customer;
-      
-      // Update in Supabase
-      const { data, error } = await supabase
-        .from('customers')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      
-      return data as Customer;
-    } catch (error) {
-      console.error("Failed to update customer:", error);
-      throw error;
-    }
-  },
-  
-  delete: async (id: number): Promise<void> => {
-    try {
-      // Delete from Supabase
-      const { error } = await supabase
-        .from('customers')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
-    } catch (error) {
-      console.error("Failed to delete customer:", error);
-      throw error;
-    }
-  }
-};
-
 // Sales API
 export const salesApi = {
   getAll: async (): Promise<Sale[]> => {
@@ -214,7 +130,8 @@ export const salesApi = {
       // Try to fetch from Supabase first
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
-        .select('*');
+        .select('*')
+        .order('created_at', { ascending: false });
       
       if (salesError) throw salesError;
       
@@ -232,7 +149,7 @@ export const salesApi = {
             
           if (itemsError) throw itemsError;
           
-          // Map database fields to our Sale type
+          // Map database fields to our CartItem type
           const cartItems: CartItem[] = itemsData?.map(item => ({
             product: {
               id: item.product_id,
@@ -269,54 +186,8 @@ export const salesApi = {
         return sales;
       }
       
-      // If Supabase has no data, try the local API
-      const response = await fetch(`${API_URL}/api/sales`);
-      const responseData = await handleResponse(response);
-      
-      // Store in localStorage as backup
-      localStorage.setItem('posSales', JSON.stringify(responseData));
-      
-      // Need to fetch items for each sale
-      const sales: Sale[] = [];
-      for (const sale of responseData) {
-        // Get items for this sale
-        const itemsResponse = await fetch(`${API_URL}/api/sales/${sale.id}/items`);
-        const itemsData = await handleResponse(itemsResponse);
-        
-        // Map the items to our CartItem type
-        const cartItems: CartItem[] = itemsData.map((item: any) => ({
-          product: {
-            id: item.product_id,
-            name: item.product_name,
-            price: item.price,
-            barcode: '',  // These aren't in the sale_items table
-            stock: 0,
-            category: ''
-          },
-          quantity: item.quantity,
-          subtotal: item.subtotal
-        }));
-        
-        // Map the sale to our Sale type
-        sales.push({
-          id: sale.id,
-          cashierId: sale.cashier_id,
-          cashierName: sale.cashier_name,
-          customerId: sale.customer_id,
-          customerName: sale.customer_name,
-          items: cartItems,
-          subtotal: sale.subtotal,
-          tax: sale.tax,
-          discount: sale.discount,
-          total: sale.total,
-          paymentMethod: sale.payment_method as 'cash' | 'card' | 'digital',
-          paymentAmount: sale.payment_amount,
-          change: sale.change,
-          date: new Date(sale.created_at)
-        });
-      }
-      
-      return sales;
+      // If Supabase has no data, return empty array
+      return [];
     } catch (error) {
       console.error("Failed to fetch sales:", error);
       // Fall back to localStorage if API fails
@@ -378,6 +249,14 @@ export const salesApi = {
           }]);
         
         if (itemError) throw itemError;
+        
+        // Update product stock
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({ stock: Math.max(0, item.product.stock - item.quantity) })
+          .eq('id', item.product.id);
+          
+        if (stockError) throw stockError;
       }
       
       return {
@@ -393,66 +272,5 @@ export const salesApi = {
 
 // Add function to get recent sales history
 export const getSalesHistory = async (): Promise<Sale[]> => {
-  try {
-    // Get all sales
-    const { data: salesData, error: salesError } = await supabase
-      .from('sales')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (salesError) throw salesError;
-    
-    if (!salesData || salesData.length === 0) {
-      return [];
-    }
-    
-    // Transform sales data to match our Sale type
-    const sales: Sale[] = await Promise.all(salesData.map(async (sale) => {
-      // Get items for this sale
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('sale_items')
-        .select('*')
-        .eq('sale_id', sale.id);
-        
-      if (itemsError) throw itemsError;
-      
-      // Map database fields to our CartItem type
-      const cartItems: CartItem[] = itemsData?.map(item => ({
-        product: {
-          id: item.product_id,
-          name: item.product_name,
-          price: item.price,
-          // These fields aren't in the sale_items table, but are required by the Product type
-          barcode: '',
-          stock: 0,
-          category: ''
-        },
-        quantity: item.quantity,
-        subtotal: item.subtotal
-      })) || [];
-      
-      // Map the database fields to our Sale type
-      return {
-        id: sale.id,
-        cashierId: sale.cashier_id,
-        cashierName: sale.cashier_name,
-        customerId: sale.customer_id || undefined,
-        customerName: sale.customer_name || undefined,
-        items: cartItems,
-        subtotal: sale.subtotal,
-        tax: sale.tax,
-        discount: sale.discount,
-        total: sale.total,
-        paymentMethod: sale.payment_method as 'cash' | 'card' | 'digital',
-        paymentAmount: sale.payment_amount,
-        change: sale.change,
-        date: new Date(sale.created_at)
-      };
-    }));
-    
-    return sales;
-  } catch (error) {
-    console.error("Failed to fetch sales history:", error);
-    throw error;
-  }
+  return salesApi.getAll();
 };

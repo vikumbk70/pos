@@ -16,27 +16,39 @@ const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, 
 });
 
 // Enable realtime for specific tables
-supabase.channel('schema-db-changes')
-  .on('postgres_changes', { 
-    event: '*', 
-    schema: 'public', 
-    table: 'products' 
-  }, () => {})
-  .on('postgres_changes', { 
-    event: '*', 
-    schema: 'public', 
-    table: 'customers' 
-  }, () => {})
-  .on('postgres_changes', { 
-    event: '*', 
-    schema: 'public', 
-    table: 'sales' 
-  }, () => {})
-  .on('postgres_changes', { 
-    event: '*', 
-    schema: 'public', 
-    table: 'sale_items' 
-  }, () => {})
-  .subscribe();
+// Initialize the realtime subscription for tables
+const channel = supabase.channel('schema-db-changes');
+
+// Subscribe to changes on the products table
+channel.on('postgres_changes', { 
+  event: '*', 
+  schema: 'public', 
+  table: 'products' 
+}, () => {
+  console.log('Products table updated');
+});
+
+// Subscribe to changes on the sales table
+channel.on('postgres_changes', { 
+  event: '*', 
+  schema: 'public', 
+  table: 'sales' 
+}, () => {
+  console.log('Sales table updated');
+});
+
+// Subscribe to changes on the sale_items table
+channel.on('postgres_changes', { 
+  event: '*', 
+  schema: 'public', 
+  table: 'sale_items' 
+}, () => {
+  console.log('Sale items table updated');
+});
+
+// Start the subscription
+channel.subscribe((status) => {
+  console.log('Realtime subscription status:', status);
+});
 
 export { supabase };
