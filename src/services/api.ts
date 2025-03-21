@@ -30,13 +30,13 @@ export const productsApi = {
       }
       
       // If Supabase has no data, try the local API
-      const response = await fetch(`${API_URL}/products`);
-      const responseData = await handleResponse(response);
+      const response = await fetch(`${API_URL}/api/products`);
+      const products = await handleResponse(response);
       
       // Store in localStorage as backup
-      localStorage.setItem('posProducts', JSON.stringify(responseData.products));
+      localStorage.setItem('posProducts', JSON.stringify(products));
       
-      return responseData.products;
+      return products;
     } catch (error) {
       console.error("Failed to fetch products:", error);
       // Fall back to localStorage if API fails
@@ -117,13 +117,13 @@ export const customersApi = {
       }
       
       // If Supabase has no data, try the local API
-      const response = await fetch(`${API_URL}/customers`);
-      const responseData = await handleResponse(response);
+      const response = await fetch(`${API_URL}/api/customers`);
+      const customers = await handleResponse(response);
       
       // Store in localStorage as backup
-      localStorage.setItem('posCustomers', JSON.stringify(responseData.customers));
+      localStorage.setItem('posCustomers', JSON.stringify(customers));
       
-      return responseData.customers;
+      return customers;
     } catch (error) {
       console.error("Failed to fetch customers:", error);
       // Fall back to localStorage if API fails
@@ -250,18 +250,71 @@ export const salesApi = {
       }
       
       // If Supabase has no data, try the local API
-      const response = await fetch(`${API_URL}/sales`);
+      const response = await fetch(`${API_URL}/api/sales`);
       const responseData = await handleResponse(response);
       
       // Store in localStorage as backup
-      localStorage.setItem('posSales', JSON.stringify(responseData.sales));
+      localStorage.setItem('posSales', JSON.stringify(responseData));
       
-      return responseData.sales;
+      // Need to fetch items for each sale
+      const sales: Sale[] = [];
+      for (const sale of responseData) {
+        // Get items for this sale
+        const itemsResponse = await fetch(`${API_URL}/api/sales/${sale.id}/items`);
+        const itemsData = await handleResponse(itemsResponse);
+        
+        // Map the items to our CartItem type
+        const cartItems: CartItem[] = itemsData.map((item: any) => ({
+          product: {
+            id: item.product_id,
+            name: item.product_name,
+            price: item.price,
+            barcode: '',  // These aren't in the sale_items table
+            stock: 0,
+            category: ''
+          },
+          quantity: item.quantity,
+          subtotal: item.subtotal
+        }));
+        
+        // Map the sale to our Sale type
+        sales.push({
+          id: sale.id,
+          cashierId: sale.cashier_id,
+          cashierName: sale.cashier_name,
+          customerId: sale.customer_id,
+          customerName: sale.customer_name,
+          items: cartItems,
+          subtotal: sale.subtotal,
+          tax: sale.tax,
+          discount: sale.discount,
+          total: sale.total,
+          paymentMethod: sale.payment_method as 'cash' | 'card' | 'digital',
+          paymentAmount: sale.payment_amount,
+          change: sale.change,
+          date: new Date(sale.created_at)
+        });
+      }
+      
+      return sales;
     } catch (error) {
       console.error("Failed to fetch sales:", error);
       // Fall back to localStorage if API fails
       const storedSales = localStorage.getItem('posSales');
-      return storedSales ? JSON.parse(storedSales) : [];
+      if (storedSales) {
+        try {
+          const parsedSales = JSON.parse(storedSales);
+          // Ensure dates are parsed as Date objects
+          return parsedSales.map((sale: any) => ({
+            ...sale,
+            date: new Date(sale.date)
+          }));
+        } catch (e) {
+          console.error("Failed to parse stored sales:", e);
+          return [];
+        }
+      }
+      return [];
     }
   },
   

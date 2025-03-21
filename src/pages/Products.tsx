@@ -46,7 +46,7 @@ import { Navigate } from 'react-router-dom';
 
 const Products = () => {
   const { isAdmin } = useAuth();
-  const { products } = usePos();
+  const { products, addProduct, updateProduct, deleteProduct } = usePos();
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredProducts, setFilteredProducts] = useState<Product[]>(products);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -55,6 +55,7 @@ const Products = () => {
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'stock'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Form state
   const [productForm, setProductForm] = useState<{
@@ -182,8 +183,8 @@ const Products = () => {
     }
   };
   
-  // Mock functions for CRUD operations (would connect to local DB in a real app)
-  const saveProduct = () => {
+  // Save product to Supabase
+  const saveProduct = async () => {
     // Validate form
     if (!productForm.name) {
       toast.error('Product name is required');
@@ -213,25 +214,55 @@ const Products = () => {
       return;
     }
     
-    // In a real app, this would update the local database
-    // For now, we'll just show a toast
-    if (selectedProduct) {
-      toast.success(`Product "${productForm.name}" updated successfully`);
-    } else {
-      toast.success(`Product "${productForm.name}" added successfully`);
-    }
+    setIsSubmitting(true);
     
-    setIsAddEditDialogOpen(false);
+    try {
+      const productData = {
+        name: productForm.name,
+        barcode: productForm.barcode,
+        price: parseFloat(productForm.price),
+        stock: parseInt(productForm.stock),
+        category: productForm.category,
+      };
+      
+      if (selectedProduct) {
+        // Update existing product
+        await updateProduct({
+          ...productData,
+          id: selectedProduct.id
+        });
+        toast.success(`Product "${productForm.name}" updated successfully`);
+      } else {
+        // Create new product
+        await addProduct(productData);
+        toast.success(`Product "${productForm.name}" added successfully`);
+      }
+      
+      setIsAddEditDialogOpen(false);
+    } catch (error) {
+      console.error('Error saving product:', error);
+      toast.error('Failed to save product');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
-  const deleteProduct = () => {
+  // Delete product from Supabase
+  const handleDeleteProduct = async () => {
     if (!selectedProduct) return;
     
-    // In a real app, this would delete from the local database
-    // For now, we'll just show a toast
-    toast.success(`Product "${selectedProduct.name}" deleted successfully`);
+    setIsSubmitting(true);
     
-    setIsDeleteDialogOpen(false);
+    try {
+      await deleteProduct(selectedProduct.id);
+      toast.success(`Product "${selectedProduct.name}" deleted successfully`);
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast.error('Failed to delete product');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   return (
@@ -491,11 +522,15 @@ const Products = () => {
               <Button
                 variant="outline"
                 onClick={() => setIsAddEditDialogOpen(false)}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
-              <Button onClick={saveProduct}>
-                {selectedProduct ? 'Update Product' : 'Add Product'}
+              <Button 
+                onClick={saveProduct}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Saving...' : selectedProduct ? 'Update Product' : 'Add Product'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -529,14 +564,16 @@ const Products = () => {
               <Button
                 variant="outline"
                 onClick={() => setIsDeleteDialogOpen(false)}
+                disabled={isSubmitting}
               >
                 Cancel
               </Button>
               <Button
                 variant="destructive"
-                onClick={deleteProduct}
+                onClick={handleDeleteProduct}
+                disabled={isSubmitting}
               >
-                Delete Product
+                {isSubmitting ? 'Deleting...' : 'Delete Product'}
               </Button>
             </DialogFooter>
           </DialogContent>
