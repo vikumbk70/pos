@@ -1,7 +1,8 @@
+
 // Mock data for the POS system - used for development and demo purposes
 // In a real app, this would be stored in a local SQLite database
 
-import { Product, Customer } from '@/types/pos';
+import { Product, Customer } from '../contexts/PosContext';
 
 // Mock Products
 export const mockProducts: Product[] = [

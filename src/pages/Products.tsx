@@ -1,407 +1,543 @@
-import React, { useState, useEffect } from "react";
-import Layout from "@/components/layout/Layout";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Edit, Trash2, Plus, Search, AlertCircle, Loader2 } from "lucide-react";
-import { Product } from "@/types/pos";
-import { productsApi } from "@/services/api";
-import { toast } from "sonner";
-import { useForm, Controller } from "react-hook-form";
-import { supabase } from "@/integrations/supabase/client";
 
-type ProductFormData = Omit<Product, "id">;
+import React, { useState, useEffect } from 'react';
+import Layout from '@/components/layout/Layout';
+import { usePos, Product } from '@/contexts/PosContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from '@/components/ui/label';
+import {
+  Package,
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  AlertTriangle,
+  BarcodeIcon,
+  Filter,
+  ArrowUpDown,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import Barcode from '@/components/ui/custom/Barcode';
+import { useAuth } from '@/contexts/AuthContext';
+import { Navigate } from 'react-router-dom';
 
 const Products = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editProduct, setEditProduct] = useState<Product | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const { isAdmin } = useAuth();
+  const { products } = usePos();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>(products);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const { register: registerAdd, handleSubmit: handleSubmitAdd, reset: resetAdd, control: controlAdd, formState: { errors: errorsAdd } } = useForm<ProductFormData>();
-  const { register: registerEdit, handleSubmit: handleSubmitEdit, reset: resetEdit, control: controlEdit, formState: { errors: errorsEdit } } = useForm<Product>();
-
-  // Load products
+  const [sortBy, setSortBy] = useState<'name' | 'price' | 'stock'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  
+  // Form state
+  const [productForm, setProductForm] = useState<{
+    id: number;
+    name: string;
+    barcode: string;
+    price: string;
+    stock: string;
+    category: string;
+  }>({
+    id: 0,
+    name: '',
+    barcode: '',
+    price: '',
+    stock: '',
+    category: '',
+  });
+  
+  // Admin access check
+  if (!isAdmin()) {
+    toast.error('Access denied. Admin privileges required.');
+    return <Navigate to="/" />;
+  }
+  
+  // Get unique categories
+  const categories = Array.from(new Set(products.map(p => p.category)));
+  
+  // Filter and sort products
   useEffect(() => {
-    fetchProducts();
-
-    // Subscribe to real-time updates
-    const channel = supabase.channel('schema-db-changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'products' 
-      }, () => {
-        // Refresh the products data when changes occur
-        fetchProducts();
-      })
-      .subscribe();
+    let filtered = [...products];
     
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const fetchProducts = async () => {
-    try {
-      setIsLoading(true);
-      const data = await productsApi.getAll();
-      setProducts(data);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      toast.error("Failed to load products");
-    } finally {
-      setIsLoading(false);
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter(product => 
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.barcode.includes(searchTerm) ||
+        product.category.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-  };
-
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.barcode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const onAddProduct = async (data: ProductFormData) => {
-    try {
-      setIsSubmitting(true);
-      await productsApi.create(data);
-      toast.success(`Product "${data.name}" added successfully`);
-      setIsAddDialogOpen(false);
-      resetAdd();
-    } catch (error) {
-      console.error("Error adding product:", error);
-      toast.error("Failed to add product");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const onEditProduct = async (data: Product) => {
-    try {
-      setIsSubmitting(true);
-      await productsApi.update(data);
-      toast.success(`Product "${data.name}" updated successfully`);
-      setIsEditDialogOpen(false);
-    } catch (error) {
-      console.error("Error updating product:", error);
-      toast.error("Failed to update product");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const onDeleteProduct = async () => {
-    if (!productToDelete) return;
     
-    try {
-      setIsSubmitting(true);
-      await productsApi.delete(productToDelete.id);
-      toast.success(`Product "${productToDelete.name}" deleted successfully`);
-      setIsDeleteDialogOpen(false);
-      setProductToDelete(null);
-    } catch (error: any) {
-      console.error("Error deleting product:", error);
-      if (error.message?.includes("used in sales")) {
-        toast.info("Product could not be deleted as it appears in sales. Its stock has been set to 0 instead.");
-      } else {
-        toast.error("Failed to delete product");
+    // Apply category filter
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(product => product.category === categoryFilter);
+    }
+    
+    // Apply sorting
+    filtered.sort((a, b) => {
+      if (sortBy === 'name') {
+        return sortOrder === 'asc' 
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name);
+      } else if (sortBy === 'price') {
+        return sortOrder === 'asc' ? a.price - b.price : b.price - a.price;
+      } else { // stock
+        return sortOrder === 'asc' ? a.stock - b.stock : b.stock - a.stock;
       }
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
+    
+    setFilteredProducts(filtered);
+  }, [products, searchTerm, sortBy, sortOrder, categoryFilter]);
+  
+  // Handle barcode scan
+  const handleBarcodeScan = (barcode: string) => {
+    setProductForm({
+      ...productForm,
+      barcode
+    });
   };
-
-  const handleEdit = (product: Product) => {
-    setEditProduct(product);
-    resetEdit(product);
-    setIsEditDialogOpen(true);
+  
+  // Reset product form
+  const resetProductForm = () => {
+    setProductForm({
+      id: 0,
+      name: '',
+      barcode: '',
+      price: '',
+      stock: '',
+      category: '',
+    });
   };
-
-  const handleDelete = (product: Product) => {
-    setProductToDelete(product);
+  
+  // Open add product dialog
+  const handleAddProduct = () => {
+    resetProductForm();
+    setSelectedProduct(null);
+    setIsAddEditDialogOpen(true);
+  };
+  
+  // Open edit product dialog
+  const handleEditProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setProductForm({
+      id: product.id,
+      name: product.name,
+      barcode: product.barcode,
+      price: product.price.toString(),
+      stock: product.stock.toString(),
+      category: product.category,
+    });
+    setIsAddEditDialogOpen(true);
+  };
+  
+  // Open delete product dialog
+  const handleDeleteClick = (product: Product) => {
+    setSelectedProduct(product);
     setIsDeleteDialogOpen(true);
   };
-
+  
+  // Handle form input change
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setProductForm({
+      ...productForm,
+      [name]: value,
+    });
+  };
+  
+  // Toggle sort order
+  const toggleSort = (field: 'name' | 'price' | 'stock') => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+  
+  // Mock functions for CRUD operations (would connect to local DB in a real app)
+  const saveProduct = () => {
+    // Validate form
+    if (!productForm.name) {
+      toast.error('Product name is required');
+      return;
+    }
+    
+    if (!productForm.barcode) {
+      toast.error('Product barcode is required');
+      return;
+    }
+    
+    const price = parseFloat(productForm.price);
+    if (isNaN(price) || price <= 0) {
+      toast.error('Price must be a positive number');
+      return;
+    }
+    
+    const stock = parseInt(productForm.stock);
+    if (isNaN(stock) || stock < 0) {
+      toast.error('Stock must be a non-negative number');
+      return;
+    }
+    
+    // Check if barcode already exists for a different product
+    if (!selectedProduct && products.some(p => p.barcode === productForm.barcode)) {
+      toast.error('A product with this barcode already exists');
+      return;
+    }
+    
+    // In a real app, this would update the local database
+    // For now, we'll just show a toast
+    if (selectedProduct) {
+      toast.success(`Product "${productForm.name}" updated successfully`);
+    } else {
+      toast.success(`Product "${productForm.name}" added successfully`);
+    }
+    
+    setIsAddEditDialogOpen(false);
+  };
+  
+  const deleteProduct = () => {
+    if (!selectedProduct) return;
+    
+    // In a real app, this would delete from the local database
+    // For now, we'll just show a toast
+    toast.success(`Product "${selectedProduct.name}" deleted successfully`);
+    
+    setIsDeleteDialogOpen(false);
+  };
+  
   return (
     <Layout>
-      <div className="container mx-auto py-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">Products</h1>
-          <Button onClick={() => {
-            resetAdd({
-              name: "",
-              barcode: "",
-              price: 0,
-              stock: 0,
-              category: "",
-              image: ""
-            });
-            setIsAddDialogOpen(true);
-          }}>
-            <Plus className="mr-2 h-4 w-4" /> Add Product
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Products</h1>
+            <p className="text-muted-foreground">
+              Manage your inventory and product catalog
+            </p>
+          </div>
+          <Button onClick={handleAddProduct}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Product
           </Button>
         </div>
-
-        <div className="flex mb-4">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Barcode</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4">
-                      No products found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredProducts.map((product) => (
-                    <TableRow key={product.id}>
-                      <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell>{product.barcode}</TableCell>
-                      <TableCell>{product.category}</TableCell>
-                      <TableCell className="text-right">${product.price.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">
-                        <span className={`${product.stock <= 5 ? 'text-red-600' : 'text-green-600'}`}>
-                          {product.stock}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => handleEdit(product)}>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>Product Inventory</CardTitle>
+            <CardDescription>
+              {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''} in catalog
+            </CardDescription>
+          </CardHeader>
+          
+          <CardContent className="space-y-4">
+            {/* Search and Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Select 
+                  value={categoryFilter} 
+                  onValueChange={setCategoryFilter}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            {/* Products Table */}
+            {filteredProducts.length > 0 ? (
+              <div className="border rounded-md overflow-hidden">
+                <div className="grid grid-cols-6 md:grid-cols-8 px-4 py-3 bg-muted/50 text-sm font-medium">
+                  <div 
+                    className="col-span-2 md:col-span-3 flex items-center cursor-pointer"
+                    onClick={() => toggleSort('name')}
+                  >
+                    Product
+                    {sortBy === 'name' && (
+                      <ArrowUpDown 
+                        className={`h-4 w-4 ml-1 ${sortOrder === 'desc' ? 'rotate-180' : ''}`} 
+                      />
+                    )}
+                  </div>
+                  <div className="hidden md:block">Category</div>
+                  <div 
+                    className="text-right cursor-pointer"
+                    onClick={() => toggleSort('price')}
+                  >
+                    Price
+                    {sortBy === 'price' && (
+                      <ArrowUpDown 
+                        className={`h-4 w-4 ml-1 ${sortOrder === 'desc' ? 'rotate-180' : ''}`} 
+                      />
+                    )}
+                  </div>
+                  <div 
+                    className="text-right cursor-pointer"
+                    onClick={() => toggleSort('stock')}
+                  >
+                    Stock
+                    {sortBy === 'stock' && (
+                      <ArrowUpDown 
+                        className={`h-4 w-4 ml-1 ${sortOrder === 'desc' ? 'rotate-180' : ''}`} 
+                      />
+                    )}
+                  </div>
+                  <div className="text-center">Status</div>
+                  <div className="text-right">Actions</div>
+                </div>
+                
+                <div className="divide-y">
+                  {filteredProducts.map((product) => (
+                    <div key={product.id} className="grid grid-cols-6 md:grid-cols-8 px-4 py-3 text-sm items-center">
+                      <div className="col-span-2 md:col-span-3">
+                        <div className="font-medium">{product.name}</div>
+                        <div className="text-xs text-muted-foreground flex items-center">
+                          <BarcodeIcon className="h-3 w-3 mr-1" />
+                          {product.barcode}
+                        </div>
+                      </div>
+                      <div className="hidden md:block text-muted-foreground">
+                        {product.category}
+                      </div>
+                      <div className="text-right font-medium">
+                        ${product.price.toFixed(2)}
+                      </div>
+                      <div className="text-right">
+                        {product.stock} units
+                      </div>
+                      <div className="text-center">
+                        {product.stock > 0 ? (
+                          product.stock < 10 ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                              Low Stock
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                              In Stock
+                            </span>
+                          )
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                            Out of Stock
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex justify-end space-x-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditProduct(product)}
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDelete(product)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => handleDeleteClick(product)}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
-        {/* Add Product Dialog */}
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Add New Product</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmitAdd(onAddProduct)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Product Name</Label>
-                  <Input id="name" {...registerAdd('name', { required: "Name is required" })} />
-                  {errorsAdd.name && <p className="text-red-500 text-sm">{errorsAdd.name.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="barcode">Barcode</Label>
-                  <Input id="barcode" {...registerAdd('barcode', { required: "Barcode is required" })} />
-                  {errorsAdd.barcode && <p className="text-red-500 text-sm">{errorsAdd.barcode.message}</p>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price</Label>
-                  <Input 
-                    id="price" 
-                    type="number" 
-                    step="0.01" 
-                    {...registerAdd('price', { 
-                      required: "Price is required",
-                      valueAsNumber: true,
-                      min: { value: 0.01, message: "Price must be greater than 0" } 
-                    })} 
-                  />
-                  {errorsAdd.price && <p className="text-red-500 text-sm">{errorsAdd.price.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="stock">Stock</Label>
-                  <Input 
-                    id="stock" 
-                    type="number" 
-                    {...registerAdd('stock', { 
-                      required: "Stock is required",
-                      valueAsNumber: true,
-                      min: { value: 0, message: "Stock cannot be negative" } 
-                    })} 
-                  />
-                  {errorsAdd.stock && <p className="text-red-500 text-sm">{errorsAdd.stock.message}</p>}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Input id="category" {...registerAdd('category', { required: "Category is required" })} />
-                {errorsAdd.category && <p className="text-red-500 text-sm">{errorsAdd.category.message}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="image">Image URL (Optional)</Label>
-                <Input id="image" {...registerAdd('image')} />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setIsAddDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            ) : (
+              <div className="text-center py-10 border border-dashed rounded-lg">
+                <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-muted-foreground">No products found</p>
+                <Button variant="outline" className="mt-4" onClick={handleAddProduct}>
+                  <Plus className="h-4 w-4 mr-2" />
                   Add Product
                 </Button>
               </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit Product Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Edit Product</DialogTitle>
-            </DialogHeader>
-            {editProduct && (
-              <form onSubmit={handleSubmitEdit(onEditProduct)} className="space-y-4">
-                <input type="hidden" {...registerEdit('id')} />
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-name">Product Name</Label>
-                    <Input id="edit-name" {...registerEdit('name', { required: "Name is required" })} />
-                    {errorsEdit.name && <p className="text-red-500 text-sm">{errorsEdit.name.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-barcode">Barcode</Label>
-                    <Input id="edit-barcode" {...registerEdit('barcode', { required: "Barcode is required" })} />
-                    {errorsEdit.barcode && <p className="text-red-500 text-sm">{errorsEdit.barcode.message}</p>}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-price">Price</Label>
-                    <Input 
-                      id="edit-price" 
-                      type="number" 
-                      step="0.01" 
-                      {...registerEdit('price', { 
-                        required: "Price is required",
-                        valueAsNumber: true,
-                        min: { value: 0.01, message: "Price must be greater than 0" } 
-                      })} 
-                    />
-                    {errorsEdit.price && <p className="text-red-500 text-sm">{errorsEdit.price.message}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-stock">Stock</Label>
-                    <Input 
-                      id="edit-stock" 
-                      type="number" 
-                      {...registerEdit('stock', { 
-                        required: "Stock is required",
-                        valueAsNumber: true,
-                        min: { value: 0, message: "Stock cannot be negative" } 
-                      })} 
-                    />
-                    {errorsEdit.stock && <p className="text-red-500 text-sm">{errorsEdit.stock.message}</p>}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-category">Category</Label>
-                  <Input id="edit-category" {...registerEdit('category', { required: "Category is required" })} />
-                  {errorsEdit.category && <p className="text-red-500 text-sm">{errorsEdit.category.message}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-image">Image URL (Optional)</Label>
-                  <Input id="edit-image" {...registerEdit('image')} />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setIsEditDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Update Product
-                  </Button>
-                </div>
-              </form>
             )}
+          </CardContent>
+        </Card>
+        
+        {/* Add/Edit Product Dialog */}
+        <Dialog open={isAddEditDialogOpen} onOpenChange={setIsAddEditDialogOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedProduct ? 'Edit Product' : 'Add New Product'}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedProduct 
+                  ? 'Update the product details'
+                  : 'Enter the details for the new product'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="name">Product Name</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    value={productForm.name}
+                    onChange={handleFormChange}
+                    placeholder="Enter product name"
+                  />
+                </div>
+                
+                <div className="space-y-2 col-span-2">
+                  <Label>Barcode</Label>
+                  <Barcode onScan={handleBarcodeScan} />
+                  <Input
+                    id="barcode"
+                    name="barcode"
+                    value={productForm.barcode}
+                    onChange={handleFormChange}
+                    placeholder="Enter barcode"
+                    className="mt-2"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price ($)</Label>
+                  <Input
+                    id="price"
+                    name="price"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={productForm.price}
+                    onChange={handleFormChange}
+                    placeholder="0.00"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="stock">Stock Quantity</Label>
+                  <Input
+                    id="stock"
+                    name="stock"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={productForm.stock}
+                    onChange={handleFormChange}
+                    placeholder="0"
+                  />
+                </div>
+                
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Input
+                    id="category"
+                    name="category"
+                    value={productForm.category}
+                    onChange={handleFormChange}
+                    placeholder="Enter category"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsAddEditDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={saveProduct}>
+                {selectedProduct ? 'Update Product' : 'Add Product'}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* Delete Product Dialog */}
+        
+        {/* Delete Confirmation Dialog */}
         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Delete Product</DialogTitle>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                Confirm Deletion
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this product? This action cannot be undone.
+              </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center gap-2 text-amber-600">
-              <AlertCircle className="h-5 w-5" />
-              <p>Are you sure you want to delete this product?</p>
-            </div>
-            {productToDelete && (
-              <div className="bg-muted p-3 rounded">
-                <p><strong>{productToDelete.name}</strong></p>
-                <p>Barcode: {productToDelete.barcode}</p>
-                <p>Price: ${productToDelete.price.toFixed(2)}</p>
+            
+            {selectedProduct && (
+              <div className="py-4 border rounded-md p-3 bg-muted/50">
+                <p className="font-medium">{selectedProduct.name}</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Barcode: {selectedProduct.barcode} • 
+                  Price: ${selectedProduct.price.toFixed(2)} • 
+                  Stock: {selectedProduct.stock}
+                </p>
               </div>
             )}
-            <p className="text-sm text-muted-foreground">
-              If this product has been used in any sales, it will not be deleted, but its stock will be set to 0.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button 
-                type="button" 
-                variant="outline" 
+            
+            <DialogFooter>
+              <Button
+                variant="outline"
                 onClick={() => setIsDeleteDialogOpen(false)}
               >
                 Cancel
               </Button>
-              <Button 
-                type="button" 
-                variant="destructive" 
-                onClick={onDeleteProduct} 
-                disabled={isSubmitting}
+              <Button
+                variant="destructive"
+                onClick={deleteProduct}
               >
-                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Delete
+                Delete Product
               </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
